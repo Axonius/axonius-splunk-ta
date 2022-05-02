@@ -5,7 +5,7 @@ from splunktaucclib.rest_handler.endpoint import (
     field,
     validator,
     RestModel,
-    MultipleModel,
+    DataInputModel,
 )
 from splunktaucclib.rest_handler import admin_external, util
 from splunk_aoblib.rest_migration import ConfigMigrationHandler
@@ -13,54 +13,39 @@ from splunk_aoblib.rest_migration import ConfigMigrationHandler
 util.remove_http_proxy_env_vars()
 
 
-fields_proxy = [
+fields = [
     field.RestField(
-        'proxy_enabled',
-        required=False,
+        'interval',
+        required=True,
         encrypted=False,
         default=None,
-        validator=None
+        validator=validator.Pattern(
+            regex=r"""^\-[1-9]\d*$|^\d*$""", 
+        )
     ), 
     field.RestField(
-        'proxy_type',
-        required=False,
+        'index',
+        required=True,
         encrypted=False,
-        default='http',
-        validator=None
+        default='default',
+        validator=validator.String(
+            min_len=1, 
+            max_len=80, 
+        )
     ), 
     field.RestField(
-        'proxy_url',
-        required=False,
+        'api_host',
+        required=True,
         encrypted=False,
         default=None,
         validator=validator.String(
             min_len=0, 
-            max_len=4096, 
+            max_len=8192, 
         )
     ), 
     field.RestField(
-        'proxy_port',
-        required=False,
-        encrypted=False,
-        default=None,
-        validator=validator.Number(
-            min_val=1, 
-            max_val=65535, 
-        )
-    ), 
-    field.RestField(
-        'proxy_username',
-        required=False,
-        encrypted=False,
-        default=None,
-        validator=validator.String(
-            min_len=0, 
-            max_len=50, 
-        )
-    ), 
-    field.RestField(
-        'proxy_password',
-        required=False,
+        'api_key',
+        required=True,
         encrypted=True,
         default=None,
         validator=validator.String(
@@ -69,34 +54,47 @@ fields_proxy = [
         )
     ), 
     field.RestField(
-        'proxy_rdns',
+        'api_secret',
+        required=True,
+        encrypted=True,
+        default=None,
+        validator=validator.String(
+            min_len=0, 
+            max_len=8192, 
+        )
+    ), 
+    field.RestField(
+        'enforce_ssl_validation',
+        required=False,
+        encrypted=False,
+        default=True,
+        validator=None
+    ), 
+    field.RestField(
+        'ca_bundle_path',
         required=False,
         encrypted=False,
         default=None,
-        validator=None
-    )
-]
-model_proxy = RestModel(fields_proxy, name='proxy')
+        validator=validator.String(
+            min_len=0, 
+            max_len=8192, 
+        )
+    ), 
 
-
-fields_logging = [
     field.RestField(
-        'loglevel',
+        'disabled',
         required=False,
-        encrypted=False,
-        default='INFO',
         validator=None
     )
+
 ]
-model_logging = RestModel(fields_logging, name='logging')
+model = RestModel(fields, name=None)
 
 
-endpoint = MultipleModel(
-    'ta_axonius_settings',
-    models=[
-        model_proxy, 
-        model_logging
-    ],
+
+endpoint = DataInputModel(
+    'instance_health_metrics',
+    model,
 )
 
 
