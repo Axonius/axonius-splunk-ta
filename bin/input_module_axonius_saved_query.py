@@ -231,7 +231,6 @@ class EntitySearch:
                     }
                 }
 
-
                 status, response, exception = self._api.post(self._api_endpoint, data=data)
 
                 if status == 200 and response is not None and exception is None:
@@ -241,19 +240,16 @@ class EntitySearch:
                         for device in response["data"]:
                             entity_row = {}
 
-                            for field in data['data']['attributes']['fields']['devices']:
+                            for field in list(device['attributes'].keys()):
                                 field_name = field
 
-                                if True == shorten_field_names:
+                                if shorten_field_names:
                                     field_name = field.replace("specific_data.data.", "").replace("adapters_data.", "")
                                     
                                 if field_name in dynamic_field_mapping.keys():
                                     field_name = dynamic_field_mapping[field_name]
 
-                                if field in device['attributes']:
-                                    entity_row[field_name] = device['attributes'][field]
-                                else:
-                                    entity_row[field_name] = device['attributes'][f"{field}_details"]
+                                entity_row[field_name] = device['attributes'][field]
 
                             entities.append(entity_row)
 
