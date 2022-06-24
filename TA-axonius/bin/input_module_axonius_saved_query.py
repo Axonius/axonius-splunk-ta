@@ -474,7 +474,11 @@ def collect_events(helper, ew):
     if match is not None:
         host = match.groups()[0]
 
-    timeout = Config.request_timeout if helper.get_arg('name') is not None else 5
+    if helper.get_global_setting('api_secret'):
+        timeout = helper.get_global_setting('api_secret')
+    else:
+        timeout = Config.request_timeout if helper.get_arg('name') is not None else 5
+
     retry_standoff = Config.retry_standoff if helper.get_arg('name') is not None else [0, 3, 3, 3]
 
     # Create an API object for REST calls
