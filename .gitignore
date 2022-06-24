@@ -132,6 +132,9 @@ dmypy.json
 
 .DS_Store
 
+#Obsidan
+.obsidian/
+
 # Splunk stuff
 vendor/
 local/
