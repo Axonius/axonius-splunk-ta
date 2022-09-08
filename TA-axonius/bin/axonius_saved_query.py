@@ -52,7 +52,7 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("entity_type", title="Entity Type",
                                          description="The entity type of the saved query, either devices or users",
-                                         required_on_create=False,
+                                         required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("saved_query", title="Saved Query",
                                          description="The name of the saved query",

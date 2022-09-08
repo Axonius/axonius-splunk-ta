@@ -45,7 +45,7 @@ fields = [
     ), 
     field.RestField(
         'entity_type',
-        required=False,
+        required=True,
         encrypted=False,
         default='devices',
         validator=None
@@ -84,7 +84,7 @@ fields = [
         'dynamic_field_mapping',
         required=False,
         encrypted=False,
-        default=None,
+        default='{"hostname": "host", "network_interfaces.ips": "ip_address"}',
         validator=validator.String(
             min_len=0, 
             max_len=8192, 
@@ -94,14 +94,14 @@ fields = [
         'shorten_field_names',
         required=False,
         encrypted=False,
-        default=None,
+        default=True,
         validator=None
     ), 
     field.RestField(
         'incremental_data_ingest',
         required=False,
         encrypted=False,
-        default=None,
+        default=True,
         validator=None
     ), 
     field.RestField(
