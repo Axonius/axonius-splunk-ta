@@ -141,11 +141,13 @@ class SavedQueries:
 
 
 class EntitySearch:
-    def __init__(self, api, entity_type, page_size=1000, logger_callback=None):
+    def __init__(self, api, entity_type, page_size=1000, include_details=True,
+                 logger_callback=None):
 
         self._api = api
         self._api_endpoint = f"/api/{entity_type}"
         self._page_size = page_size
+        self._include_details = include_details
         self._cursor = None
         self._logger_callback = logger_callback
         self._uuid = None
@@ -213,7 +215,7 @@ class EntitySearch:
                                 "limit": self._page_size
                             },
                             "get_metadata": True,
-                            "include_details": True,
+                            "include_details": self._include_details,
                             "use_cursor": True,
                             "cursor_id": self._cursor
                         }
@@ -424,6 +426,7 @@ def collect_events(helper, ew):
     opt_field_mapping = helper.get_arg('dynamic_field_mapping')
     opt_ssl_certificate_path = helper.get_arg('ssl_certificate_path')
     opt_enforce_ssl_validation = helper.get_arg('enforce_ssl_validation')
+    opt_enable_include_details = helper.get_arg('enable_include_details')
 
     # Logging functions
     def log_info(msg):
@@ -448,6 +451,7 @@ def collect_events(helper, ew):
     log_info(f"VARS - API standoff (ms): {opt_standoff_ms}")
     log_info(f"VARS - Field Mapping: {opt_field_mapping}")
     log_info(f"VARS - Enforce SSL validation: {opt_enforce_ssl_validation}")
+    log_info(f"VARS - Enable include details: {opt_enable_include_details}")
     log_info(f"VARS - CA bundle path: {opt_ssl_certificate_path}")
 
     include_auids = True if helper.get_arg('name') is None else False
@@ -477,7 +481,8 @@ def collect_events(helper, ew):
     api = API(opt_api_host, opt_api_key, opt_api_secret, verify, timeout=timeout)
 
     # Create EntitySearch object with entity type and page size
-    search = EntitySearch(api, opt_entity_type, opt_page_size, log_info)
+    search = EntitySearch(api, opt_entity_type, opt_page_size, 
+                          opt_enable_include_details, log_info)
 
     log_info(checkpoint_name)
 

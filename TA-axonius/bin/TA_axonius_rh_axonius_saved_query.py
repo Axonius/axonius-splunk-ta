@@ -112,6 +112,13 @@ fields = [
         validator=None
     ), 
     field.RestField(
+        'enable_include_details',
+        required=False,
+        encrypted=False,
+        default=True,
+        validator=None
+    ), 
+    field.RestField(
         'ssl_certificate_path',
         required=False,
         encrypted=False,
