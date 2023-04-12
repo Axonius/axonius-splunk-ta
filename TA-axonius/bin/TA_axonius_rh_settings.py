@@ -28,8 +28,8 @@ model_logging = RestModel(fields_logging, name='logging')
 fields_additional_parameters = [
     field.RestField(
         'api_key',
-        required=True,
-        encrypted=False,
+        required=False,
+        encrypted=True,
         default='',
         validator=validator.String(
             min_len=0, 
@@ -38,7 +38,7 @@ fields_additional_parameters = [
     ), 
     field.RestField(
         'api_secret',
-        required=True,
+        required=False,
         encrypted=True,
         default='',
         validator=validator.String(

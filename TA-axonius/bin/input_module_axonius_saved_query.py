@@ -6,6 +6,8 @@ import re
 import requests
 import time
 
+from urllib.parse import urlparse
+
 
 class Config:
     supported_minimum_version: str = "4.4.0"
@@ -53,9 +55,13 @@ class API:
         return req_status_code, req_json, exception
 
     def get(self, api_endpoint, data=None, params=None, headers={}):
+        if 'Content-Type' not in headers:
+            headers['Content-Type'] = 'application/json'
         return self._rest_base("get", api_endpoint, data=data, params=params, headers=headers)
 
     def post(self, api_endpoint, data=None, params=None, headers={}):
+        if 'Content-Type' not in headers:
+            headers['Content-Type'] = 'application/vnd.api+json'
         return self._rest_base("post", api_endpoint, data=data, params=params, headers=headers)
 
 
@@ -138,12 +144,18 @@ class SavedQueries:
         return uuid, query_filter, query_fields, query_column_filters
 
 
+def shorten_field_name(field: str) -> str:
+    return field.replace("specific_data.data.", "").replace("adapters_data.", "")
+
+
 class EntitySearch:
-    def __init__(self, api, entity_type, page_size=1000, logger_callback=None):
+    def __init__(self, api, entity_type, page_size=1000, include_details=True,
+                 logger_callback=None):
 
         self._api = api
         self._api_endpoint = f"/api/{entity_type}"
         self._page_size = page_size
+        self._include_details = include_details
         self._cursor = None
         self._logger_callback = logger_callback
         self._uuid = None
@@ -155,43 +167,30 @@ class EntitySearch:
         if self._logger_callback is not None:
             self._logger_callback(msg)
 
-    def get(self):
-        response = {"data": "init"}
-        entities = []
-        offset = 0
-        cursor = None
-
-        while response["data"]:
-            data = {
-                "data": {
-                    "type": "entity_request_schema",
-                    "attributes": {
-                        "page": {
-                            "offset": offset,
-                            "limit": self._page_size
-                        },
-                        "use_cache_entry": False,
-                        "always_cached_query": False,
-                        "get_metadata": True,
-                        "include_details": True
-                    }
+    def connection_test(self) -> None:
+        data = {
+            "data": {
+                "type": "entity_request_schema",
+                "attributes": {
+                    "page": {
+                        "limit": 1
+                    },
+                    "use_cache_entry": False,
+                    "always_cached_query": False,
+                    "get_metadata": True,
+                    "include_details": True
                 }
             }
+        }
 
-            status, response, exception = self._api.post(self._api_endpoint, data)
+        status, response, exception = self._api.post(self._api_endpoint, data)
+        if not (status == 200 and response is not None and exception is None):
+            raise Exception(f"Critical Error! Status Code: {status}\tException: {exception}")
 
-            if status == 200 and response is not None and exception is None:
-                for device in response["data"]:
-                    entities.append(device["attributes"])
-
-                offset += self._page_size
-            else:
-                raise Exception(f"Critical Error! Status Code: {status}\tException: {exception}")
-
-        return entities
 
     def execute_saved_query(self, name, standoff=0, shorten_field_names=False, dynamic_field_mapping={},
-                            incremental_ingest=False, include_auids=False, truncate_fields=[], batch_callback=None):
+                            incremental_ingest=False, incremental_ingest_time_field='specific_data.data.fetch_time', 
+                            include_auids=False, truncate_fields=[], batch_callback=None):
         try:
             ax_saved_queries = SavedQueries(self._api, self._api_endpoint)
 
@@ -199,73 +198,78 @@ class EntitySearch:
                 self._uuid, self._query_filter, self._query_fields, self._query_column_filters = ax_saved_queries.get_attributes_by_name(name)
 
             if incremental_ingest:
-                if "specific_data.data.fetch_time" not in self._query_fields:
-                    self._query_fields.append("specific_data.data.fetch_time")
+                if incremental_ingest_time_field not in self._query_fields:
+                    self._query_fields.append(incremental_ingest_time_field)
 
             if include_auids:
                 if "internal_axon_id" not in self._query_fields:
                     self._query_fields.append("internal_axon_id")
 
+            response = {"data": "init"}
             entities = []
             entity_count = 0
 
-            data = {
-                "data": {
-                    "type": "entity_request_schema",
-                    "attributes": {
-                        "use_cache_entry": False,
-                        "always_cached_query": False,
-                        "filter": self._query_filter,
-                        "fields": {
-                            "devices": self._query_fields
-                        },
-                        "page": {
-                            "limit": self._page_size
-                        },
-                        "get_metadata": True,
-                        "include_details": True,
-                        "use_cursor": True,
-                        "cursor_id": self._cursor
+            while response["data"]:
+                data = {
+                    "data": {
+                        "type": "entity_request_schema",
+                        "attributes": {
+                            "use_cache_entry": False,
+                            "always_cached_query": False,
+                            "filter": self._query_filter,
+                            "fields": {
+                                "devices": self._query_fields
+                            },
+                            "page": {
+                                "limit": self._page_size
+                            },
+                            "get_metadata": True,
+                            "include_details": self._include_details,
+                            "use_cursor": True,
+                            "cursor_id": self._cursor
+                        }
                     }
                 }
-            }
 
-            if self._query_column_filters:
-                data["data"]["attributes"]["field_filters"] = self._query_column_filters
+                if self._query_column_filters:
+                    data["data"]["attributes"]["field_filters"] = self._query_column_filters
 
-            status, response, exception = self._api.post(self._api_endpoint, data=data)
+                status, response, exception = self._api.post(self._api_endpoint, data=data)
 
-            if status == 200 and response is not None and exception is None:
-                if "meta" in response:
-                    self._cursor = response["meta"]["cursor"]
+                if status == 200 and response is not None and exception is None:
+                    if "meta" in response:
+                        self._cursor = response["meta"]["cursor"]
 
-                    for device in response["data"]:
-                        entity_row = {}
+                        for device in response["data"]:
+                            entity_row = {}
 
-                        for field in list(device['attributes'].keys()):
-                            field_name = field
+                            for field in list(device['attributes'].keys()):
+                                field_name = field
 
-                            if shorten_field_names:
-                                field_name = field.replace("specific_data.data.", "").replace("adapters_data.", "")
+                                if shorten_field_names:
+                                    field_name = shorten_field_name(field)
 
-                            if field_name in dynamic_field_mapping.keys():
-                                field_name = dynamic_field_mapping[field_name]
+                                if field_name in dynamic_field_mapping.keys():
+                                    field_name = dynamic_field_mapping[field_name]
 
-                            entity_row[field_name] = device['attributes'][field]
+                                entity_row[field_name] = device['attributes'][field]
 
-                        entities.append(entity_row)
+                            entities.append(entity_row)
 
-            else:
-                raise Exception(f"Critical Error! Status Code: '{status}' Exception: '{exception}'")
+                    else:
+                        response = {"data": None}
 
-            if standoff > 0:
-                time.sleep(standoff)
+                else:
+                    raise Exception(f"Critical Error! Status Code: '{status}' Exception: '{exception}'")
 
-            if batch_callback is not None:
-                if len(entities) > 0:
-                    batch_callback(entities)
-                    entity_count += len(entities)
-                    entities = []
+                if standoff > 0:
+                    time.sleep(standoff)
+
+                if batch_callback is not None:
+                    if len(entities) > 0:
+                        batch_callback(entities)
+                        entity_count += len(entities)
+                        entities = []
 
         except Exception as ex:
             raise Exception(f"Critical Error! Status Code: Exception: {ex}")
@@ -306,13 +310,13 @@ class EventWriter:
             if self._helper.get_arg('name') is None:
                 self._entity_ids.append(entity["internal_axon_id"])
 
-            if True == self._incremental_data_ingest:
+            if self._incremental_data_ingest:
                 # Create a timestamp from the devices fetch_time field
                 entity_fetch_time = datetime.datetime.strptime(entity[self._fetch_time_field_name],
                                                                "%a, %d %b %Y %H:%M:%S %Z").timestamp()
 
                 # Remove the fetch_time field if it was not part of the saved query's query_field definition
-                if True == self._remove_fetch_time_field:
+                if self._remove_fetch_time_field:
                     entity.pop(self._fetch_time_field_name)
 
                 # Create event
@@ -361,15 +365,19 @@ def validate_input(helper, definition):
     ssl_certificate_path = definition.parameters.get('ssl_certificate_path', "")
     enforce_ssl_validation = definition.parameters.get('enforce_ssl_validation')
 
-    try:
-        if int(page_size) < 1:
-            raise ValueError("Page Size must be an integer greater than 0")
+    if int(page_size) < 1:
+        raise ValueError('"Page Size" must be an integer greater than 0')
 
-        if int(api_standoff) < 0:
-            raise ValueError("API Standoff must be an integer greater or equal to 0")
+    if int(api_standoff) < 0:
+        raise ValueError(
+            '"API Standoff" must be an integer greater or equal to 0')
 
-    except Exception as ex:
-        raise ValueError(ex)
+    url_parts = urlparse(api_host)
+    if not all([getattr(url_parts, attrs) for attrs in ('scheme', 'netloc')]):
+        raise ValueError('"The provided URL is invalid."')
+
+    if not api_host.startswith('https://'):
+        raise ValueError('"URL" must start with https://')
 
     # Create api object
     try:
@@ -387,8 +395,9 @@ def validate_input(helper, definition):
                 verify = ssl_certificate_path
 
         api = API(api_host, str(api_key), str(api_secret), verify)
-        search = EntitySearch(api, "devices", 1000)
-        out = search.get()
+        search = EntitySearch(api, "devices", 1)
+        search.connection_test()
+
     except Exception as ex:
         helper.log_info(ex)
 
@@ -409,8 +418,6 @@ def collect_events(helper, ew):
 
     # get Axonius configuration
     opt_api_host = helper.get_arg('api_host')
-    if not opt_api_host.startswith('https://'):
-        raise Exception("URL must start with https://")
 
     opt_api_key = helper.get_global_setting('api_key')
     opt_api_secret = helper.get_global_setting('api_secret')
@@ -423,10 +430,19 @@ def collect_events(helper, ew):
     opt_page_size = helper.get_arg('page_size')
     opt_shorten_field_names = helper.get_arg('shorten_field_names')
     opt_incremental_data_ingest = helper.get_arg('incremental_data_ingest')
+
+    # create a short version upfront for later just incase
+    opt_incremental_ingest_time_field = helper.get_arg('incremental_ingest_time_field')
+    opt_incremental_ingest_time_field_short = shorten_field_name(opt_incremental_ingest_time_field)
+
     opt_standoff_ms = helper.get_arg('standoff_ms')
     opt_field_mapping = helper.get_arg('dynamic_field_mapping')
     opt_ssl_certificate_path = helper.get_arg('ssl_certificate_path')
     opt_enforce_ssl_validation = helper.get_arg('enforce_ssl_validation')
+    opt_enable_include_details = helper.get_arg('enable_include_details')
+
+    # extra options to control flow
+    opt_skip_lifecycle_check = helper.get_arg('skip_lifecycle_check')
 
     # Logging functions
     def log_info(msg):
@@ -442,16 +458,19 @@ def collect_events(helper, ew):
         helper.log_critical(f"Input '{helper.get_arg('name')}' - {msg}")
 
     # Log input variables
-    log_info(f"VARS - Axonius Host: {opt_page_size}")
-    log_info(f"VARS - Entity type: {opt_entity_type}")
-    log_info(f"VARS - Saved query: {opt_saved_query}")
-    log_info(f"VARS - Page size: {opt_page_size}")
-    log_info(f"VARS - Shorten field names: {opt_shorten_field_names}")
-    log_info(f"VARS - Incremental data ingest: {opt_incremental_data_ingest}")
-    log_info(f"VARS - API standoff (ms): {opt_standoff_ms}")
+    log_info(f"VARS - Axonius Host: {opt_api_host}")
+    log_info(f"VARS - Entity Type: {opt_entity_type}")
+    log_info(f"VARS - Saved Query: {opt_saved_query}")
+    log_info(f"VARS - Page Size: {opt_page_size}")
+    log_info(f"VARS - Shorten Field Names: {opt_shorten_field_names}")
+    log_info(f"VARS - Incremental Ingest: {opt_incremental_data_ingest}")
+    log_info(f"VARS - Incremental Ingest Time Field: {opt_incremental_ingest_time_field}")
+    log_info(f"VARS - API Standoff (MS): {opt_standoff_ms}")
     log_info(f"VARS - Field Mapping: {opt_field_mapping}")
-    log_info(f"VARS - Enforce SSL validation: {opt_enforce_ssl_validation}")
-    log_info(f"VARS - CA bundle path: {opt_ssl_certificate_path}")
+    log_info(f"VARS - Enforce SSL Validation: {opt_enforce_ssl_validation}")
+    log_info(f"VARS - Enable Include Details: {opt_enable_include_details}")
+    log_info(f"VARS - CA Bundle Path: {opt_ssl_certificate_path}")
+    log_info(f"VARS - Skip Lifecycle Check: {opt_skip_lifecycle_check}")
 
     include_auids = True if helper.get_arg('name') is None else False
     critical_error = False
@@ -465,17 +484,12 @@ def collect_events(helper, ew):
             verify = opt_ssl_certificate_path
 
     # The host field will be used to set the source host in search
-    host = None
 
     # Pull out just the host information from the Host
-    match = re.match("(?:https?:\/\/)([0-9A-z-.]+)(?::\d+)?", opt_api_host)
-
-    # Only set host if the regex exists, match should never be None.
-    if match is not None:
-        host = match.groups()[0]
+    host = urlparse(opt_api_host).hostname
 
     if helper.get_global_setting('api_secret'):
-        timeout = helper.get_global_setting('api_secret')
+        timeout = int(helper.get_global_setting('https_request_timeout'))
     else:
         timeout = Config.request_timeout if helper.get_arg('name') is not None else 5
 
@@ -485,7 +499,10 @@ def collect_events(helper, ew):
     api = API(opt_api_host, opt_api_key, opt_api_secret, verify, timeout=timeout)
 
     # Create EntitySearch object with entity type and page size
-    search = EntitySearch(api, opt_entity_type, opt_page_size, log_info)
+    search = EntitySearch(api, opt_entity_type, opt_page_size, 
+                          opt_enable_include_details, log_info)
+
+    log_info(checkpoint_name)
 
     # Load the input's checkpoint data
     checkpoint = helper.get_check_point(checkpoint_name)
@@ -512,12 +529,12 @@ def collect_events(helper, ew):
     retries = 0
     version = None
     event_writer = None
-    lifecycle_complete = False
+    lifecycle_complete = opt_skip_lifecycle_check
 
     # Set the fetch_time field name, take into account the use of shorten field name
-    fetch_time_field_name = "fetch_time" if True == opt_shorten_field_names else "specific_data.data.fetch_time"
+    fetch_time_field_name = opt_incremental_ingest_time_field_short if opt_shorten_field_names else opt_incremental_ingest_time_field
 
-    while retries < max_retries and not True == critical_error and not True == fetch_complete:
+    while retries < max_retries and not critical_error and not fetch_complete:
         try:
             if version is None:
                 # Get the raw Axonius version from the metadata endpoint
@@ -545,11 +562,11 @@ def collect_events(helper, ew):
                 retries = 0
                 exception_thrown = False
 
-            if not True == lifecycle_complete:
+            if not lifecycle_complete:
                 # Check if a discovery is running and correlation hasn't complete, warn customer if true
                 lifecycle = Lifecycle(api)
 
-                if True == lifecycle.discovery_is_running() and not True == lifecycle.correlation_is_complete():
+                if lifecycle.discovery_is_running() and not lifecycle.correlation_is_complete():
                     log_warning(f"Warning: Fetch started while correlation was not complete.")
 
                 lifecycle_complete = True
@@ -558,7 +575,7 @@ def collect_events(helper, ew):
                 retries = 0
                 exception_thrown = False
 
-            if event_writer is None:
+            if not event_writer:
                 # Get definition of query_fields, used to check if the fetch_time field should be removed
                 api_endpoint = f"/api/{opt_entity_type}"
                 ax_saved_queries = SavedQueries(api, api_endpoint)
@@ -568,7 +585,7 @@ def collect_events(helper, ew):
                 remove_fetch_time_field = True
 
                 # Look for fetch_time in the query_fields definition of the specified saved query
-                if True == opt_shorten_field_names:
+                if opt_shorten_field_names:
                     if fetch_time_field_name in query_fields:
                         remove_fetch_time_field = False
 
@@ -585,7 +602,8 @@ def collect_events(helper, ew):
 
             # Grab entity from the saved search
             search.execute_saved_query(opt_saved_query, int(opt_standoff_ms) / 1000, opt_shorten_field_names,
-                                       dynamic_field_names, incremental_ingest=opt_incremental_data_ingest,
+                                       dynamic_field_names, incremental_ingest=opt_incremental_data_ingest, 
+                                       incremental_ingest_time_field=opt_incremental_ingest_time_field,
                                        include_auids=include_auids, batch_callback=event_writer.process_batch)
 
             # Get Stats
@@ -610,10 +628,10 @@ def collect_events(helper, ew):
                 log_error(f"ERR - Error '{ex}'")
                 exception_thrown = True
 
-        if True == critical_error:
+        if critical_error:
             log_critical(
                 f"Critical Error: Axonius version {version} is unsupported, the minimum version is {Config.supported_minimum_version}")
-        elif True == exception_thrown and not True == fetch_complete:
+        elif exception_thrown and not fetch_complete:
             # Increment retry counter
             retries += 1
 
@@ -626,7 +644,7 @@ def collect_events(helper, ew):
             else:
                 # Log no devices after max retries
                 log_critical(f"Critical Error: Unable to complete fetch due to unrecoverable errors.")
-        elif True == exception_thrown and True == fetch_complete:
+        elif exception_thrown and fetch_complete:
             # Log recovered from error during fetch
             log_warning(f"Warning: Fetch was interrupted by a transient error, review results for fetch completeness.")
         else:
