@@ -96,7 +96,7 @@ class sdist(Command):
 
     sub_commands = [('check', checking_metadata)]
 
-    READMES = ('README', 'README.MD', 'README.rst')
+    READMES = ('README', 'README.txt', 'README.rst')
 
     def initialize_options(self):
         # 'template' and 'manifest' are, respectively, the names of
@@ -209,7 +209,7 @@ class sdist(Command):
 
     def add_defaults(self):
         """Add all the default files to self.filelist:
-          - README or README.MD
+          - README or README.txt
           - setup.py
           - test/test*.py
           - all pure Python modules mentioned in setup script
@@ -218,7 +218,7 @@ class sdist(Command):
           - all files defined as scripts.
           - all C sources listed as part of extensions or C libraries
             in the setup script (doesn't catch C headers!)
-        Warns if (README or README.MD) or setup.py are missing; everything
+        Warns if (README or README.txt) or setup.py are missing; everything
         else is optional.
         """
         self._add_defaults_standards()
