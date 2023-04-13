@@ -70,13 +70,13 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          description="Rename fields using a JSON-formatted string, renaming occurs prior to data ingest",
                                          required_on_create=False,
                                          required_on_edit=False))
-        scheme.add_argument(smi.Argument("shorten_field_names", title="Shorten Field Names",
-                                         description="Truncate the field name prefix, if applicable (specific_data.data, adapters_data)",
-                                         required_on_create=False,
-                                         required_on_edit=False))
-        scheme.add_argument(smi.Argument("incremental_data_ingest", title="Incremental Data Ingest",
+        scheme.add_argument(smi.Argument("incremental_data_ingest", title="Incremental Ingest",
                                          description="Include only the entities that have a fetch timer newer than last collection",
                                          required_on_create=False,
+                                         required_on_edit=False))
+        scheme.add_argument(smi.Argument("incremental_ingest_time_field", title="Incremental Ingest Time Field",
+                                         description="Time field to use for comparison for incremental ingest.",
+                                         required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("enforce_ssl_validation", title="Enforce SSL Validation",
                                          description="Enforce SSL certificate validation (the Splunk server\'s global certificate trust will be used if CA Bundle Path is left blank)",
@@ -88,6 +88,10 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("ssl_certificate_path", title="CA Bundle Path",
                                          description="The filesystem path to the CA bundle used for SSL certificate validation",
+                                         required_on_create=False,
+                                         required_on_edit=False))
+        scheme.add_argument(smi.Argument("skip_lifecycle_check", title="Skip Lifecycle Check",
+                                         description="This option will skip the lifecycle check. This should remained unchecked unless otherwise advised to turn on.",
                                          required_on_create=False,
                                          required_on_edit=False))
         return scheme
@@ -109,10 +113,10 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
 
     def get_checkbox_fields(self):
         checkbox_fields = []
-        checkbox_fields.append("shorten_field_names")
         checkbox_fields.append("incremental_data_ingest")
         checkbox_fields.append("enforce_ssl_validation")
         checkbox_fields.append("enable_include_details")
+        checkbox_fields.append("skip_lifecycle_check")
         return checkbox_fields
 
     def get_global_checkbox_fields(self):

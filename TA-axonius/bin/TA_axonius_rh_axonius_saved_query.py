@@ -91,13 +91,6 @@ fields = [
         )
     ), 
     field.RestField(
-        'shorten_field_names',
-        required=False,
-        encrypted=False,
-        default=True,
-        validator=None
-    ), 
-    field.RestField(
         'incremental_data_ingest',
         required=False,
         encrypted=False,
@@ -105,7 +98,24 @@ fields = [
         validator=None
     ), 
     field.RestField(
+        'incremental_ingest_time_field',
+        required=True,
+        encrypted=False,
+        default='specific_data.data.fetch_time',
+        validator=validator.String(
+            min_len=0, 
+            max_len=8192, 
+        )
+    ), 
+    field.RestField(
         'enforce_ssl_validation',
+        required=False,
+        encrypted=False,
+        default=True,
+        validator=None
+    ), 
+    field.RestField(
+        'enable_include_details',
         required=False,
         encrypted=False,
         default=True,
@@ -127,6 +137,13 @@ fields = [
             min_len=0, 
             max_len=8192, 
         )
+    ), 
+    field.RestField(
+        'skip_lifecycle_check',
+        required=False,
+        encrypted=False,
+        default=None,
+        validator=None
     ), 
 
     field.RestField(

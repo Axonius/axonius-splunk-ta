@@ -55,9 +55,13 @@ class API:
         return req_status_code, req_json, exception
 
     def get(self, api_endpoint, data=None, params=None, headers={}):
+        if 'Content-Type' not in headers:
+            headers['Content-Type'] = 'application/json'
         return self._rest_base("get", api_endpoint, data=data, params=params, headers=headers)
 
     def post(self, api_endpoint, data=None, params=None, headers={}):
+        if 'Content-Type' not in headers:
+            headers['Content-Type'] = 'application/vnd.api+json'
         return self._rest_base("post", api_endpoint, data=data, params=params, headers=headers)
 
 
@@ -140,6 +144,10 @@ class SavedQueries:
         return uuid, query_filter, query_fields, query_column_filters
 
 
+def shorten_field_name(field: str) -> str:
+    return field.replace("specific_data.data.", "").replace("adapters_data.", "")
+
+
 class EntitySearch:
     def __init__(self, api, entity_type, page_size=1000, include_details=True,
                  logger_callback=None):
@@ -181,7 +189,8 @@ class EntitySearch:
 
 
     def execute_saved_query(self, name, standoff=0, shorten_field_names=False, dynamic_field_mapping={},
-                            incremental_ingest=False, include_auids=False, truncate_fields=[], batch_callback=None):
+                            incremental_ingest=False, incremental_ingest_time_field='specific_data.data.fetch_time', 
+                            include_auids=False, truncate_fields=[], batch_callback=None):
         try:
             ax_saved_queries = SavedQueries(self._api, self._api_endpoint)
 
@@ -189,8 +198,8 @@ class EntitySearch:
                 self._uuid, self._query_filter, self._query_fields, self._query_column_filters = ax_saved_queries.get_attributes_by_name(name)
 
             if incremental_ingest:
-                if "specific_data.data.fetch_time" not in self._query_fields:
-                    self._query_fields.append("specific_data.data.fetch_time")
+                if incremental_ingest_time_field not in self._query_fields:
+                    self._query_fields.append(incremental_ingest_time_field)
 
             if include_auids:
                 if "internal_axon_id" not in self._query_fields:
@@ -238,7 +247,7 @@ class EntitySearch:
                                 field_name = field
 
                                 if shorten_field_names:
-                                    field_name = field.replace("specific_data.data.", "").replace("adapters_data.", "")
+                                    field_name = shorten_field_name(field)
 
                                 if field_name in dynamic_field_mapping.keys():
                                     field_name = dynamic_field_mapping[field_name]
@@ -361,8 +370,7 @@ def validate_input(helper, definition):
 
     if int(api_standoff) < 0:
         raise ValueError(
-            '"API Standoff" must be an integer greater or equal to 0'
-            )
+            '"API Standoff" must be an integer greater or equal to 0')
 
     url_parts = urlparse(api_host)
     if not all([getattr(url_parts, attrs) for attrs in ('scheme', 'netloc')]):
@@ -422,11 +430,19 @@ def collect_events(helper, ew):
     opt_page_size = helper.get_arg('page_size')
     opt_shorten_field_names = helper.get_arg('shorten_field_names')
     opt_incremental_data_ingest = helper.get_arg('incremental_data_ingest')
+
+    # create a short version upfront for later just incase
+    opt_incremental_ingest_time_field = helper.get_arg('incremental_ingest_time_field')
+    opt_incremental_ingest_time_field_short = shorten_field_name(opt_incremental_ingest_time_field)
+
     opt_standoff_ms = helper.get_arg('standoff_ms')
     opt_field_mapping = helper.get_arg('dynamic_field_mapping')
     opt_ssl_certificate_path = helper.get_arg('ssl_certificate_path')
     opt_enforce_ssl_validation = helper.get_arg('enforce_ssl_validation')
     opt_enable_include_details = helper.get_arg('enable_include_details')
+
+    # extra options to control flow
+    opt_skip_lifecycle_check = helper.get_arg('skip_lifecycle_check')
 
     # Logging functions
     def log_info(msg):
@@ -443,16 +459,18 @@ def collect_events(helper, ew):
 
     # Log input variables
     log_info(f"VARS - Axonius Host: {opt_api_host}")
-    log_info(f"VARS - Entity type: {opt_entity_type}")
-    log_info(f"VARS - Saved query: {opt_saved_query}")
-    log_info(f"VARS - Page size: {opt_page_size}")
-    log_info(f"VARS - Shorten field names: {opt_shorten_field_names}")
-    log_info(f"VARS - Incremental data ingest: {opt_incremental_data_ingest}")
-    log_info(f"VARS - API standoff (ms): {opt_standoff_ms}")
+    log_info(f"VARS - Entity Type: {opt_entity_type}")
+    log_info(f"VARS - Saved Query: {opt_saved_query}")
+    log_info(f"VARS - Page Size: {opt_page_size}")
+    log_info(f"VARS - Shorten Field Names: {opt_shorten_field_names}")
+    log_info(f"VARS - Incremental Ingest: {opt_incremental_data_ingest}")
+    log_info(f"VARS - Incremental Ingest Time Field: {opt_incremental_ingest_time_field}")
+    log_info(f"VARS - API Standoff (MS): {opt_standoff_ms}")
     log_info(f"VARS - Field Mapping: {opt_field_mapping}")
-    log_info(f"VARS - Enforce SSL validation: {opt_enforce_ssl_validation}")
-    log_info(f"VARS - Enable include details: {opt_enable_include_details}")
-    log_info(f"VARS - CA bundle path: {opt_ssl_certificate_path}")
+    log_info(f"VARS - Enforce SSL Validation: {opt_enforce_ssl_validation}")
+    log_info(f"VARS - Enable Include Details: {opt_enable_include_details}")
+    log_info(f"VARS - CA Bundle Path: {opt_ssl_certificate_path}")
+    log_info(f"VARS - Skip Lifecycle Check: {opt_skip_lifecycle_check}")
 
     include_auids = True if helper.get_arg('name') is None else False
     critical_error = False
@@ -511,10 +529,10 @@ def collect_events(helper, ew):
     retries = 0
     version = None
     event_writer = None
-    lifecycle_complete = False
+    lifecycle_complete = opt_skip_lifecycle_check
 
     # Set the fetch_time field name, take into account the use of shorten field name
-    fetch_time_field_name = "fetch_time" if opt_shorten_field_names else "specific_data.data.fetch_time"
+    fetch_time_field_name = opt_incremental_ingest_time_field_short if opt_shorten_field_names else opt_incremental_ingest_time_field
 
     while retries < max_retries and not critical_error and not fetch_complete:
         try:
@@ -584,7 +602,8 @@ def collect_events(helper, ew):
 
             # Grab entity from the saved search
             search.execute_saved_query(opt_saved_query, int(opt_standoff_ms) / 1000, opt_shorten_field_names,
-                                       dynamic_field_names, incremental_ingest=opt_incremental_data_ingest,
+                                       dynamic_field_names, incremental_ingest=opt_incremental_data_ingest, 
+                                       incremental_ingest_time_field=opt_incremental_ingest_time_field,
                                        include_auids=include_auids, batch_callback=event_writer.process_batch)
 
             # Get Stats
