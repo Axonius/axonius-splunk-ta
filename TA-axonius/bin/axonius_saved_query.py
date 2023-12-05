@@ -66,6 +66,10 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          description="The number of milliseconds to wait between successive API calls",
                                          required_on_create=True,
                                          required_on_edit=False))
+        scheme.add_argument(smi.Argument("shorten_field_names", title="Shorten Field Names",
+                                         description="Shortens the long dotted notation field names by removing the prefixes \"specific_data.data.\" and \"adapters_data.\".",
+                                         required_on_create=False,
+                                         required_on_edit=False))
         scheme.add_argument(smi.Argument("dynamic_field_mapping", title="Dynamic Field Mapping",
                                          description="Rename fields using a JSON-formatted string, renaming occurs prior to data ingest",
                                          required_on_create=False,
@@ -113,6 +117,7 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
 
     def get_checkbox_fields(self):
         checkbox_fields = []
+        checkbox_fields.append("shorten_field_names")
         checkbox_fields.append("incremental_data_ingest")
         checkbox_fields.append("enforce_ssl_validation")
         checkbox_fields.append("enable_include_details")

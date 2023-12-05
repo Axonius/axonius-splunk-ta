@@ -81,6 +81,13 @@ fields = [
         )
     ), 
     field.RestField(
+        'shorten_field_names',
+        required=False,
+        encrypted=False,
+        default=None,
+        validator=None
+    ), 
+    field.RestField(
         'dynamic_field_mapping',
         required=False,
         encrypted=False,
@@ -109,13 +116,6 @@ fields = [
     ), 
     field.RestField(
         'enforce_ssl_validation',
-        required=False,
-        encrypted=False,
-        default=True,
-        validator=None
-    ), 
-    field.RestField(
-        'enable_include_details',
         required=False,
         encrypted=False,
         default=True,
