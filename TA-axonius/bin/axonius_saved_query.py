@@ -82,10 +82,6 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          description="Time field to use for comparison for incremental ingest.",
                                          required_on_create=True,
                                          required_on_edit=False))
-        scheme.add_argument(smi.Argument("enforce_ssl_validation", title="Enforce SSL Validation",
-                                         description="Enforce SSL certificate validation (the Splunk server\'s global certificate trust will be used if CA Bundle Path is left blank)",
-                                         required_on_create=False,
-                                         required_on_edit=False))
         scheme.add_argument(smi.Argument("enable_include_details", title="Enable \"Include Details\"",
                                          description="Enable extra information to be returned in the result set that marries fields to their source adapter.",
                                          required_on_create=False,
@@ -119,7 +115,6 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
         checkbox_fields = []
         checkbox_fields.append("shorten_field_names")
         checkbox_fields.append("incremental_data_ingest")
-        checkbox_fields.append("enforce_ssl_validation")
         checkbox_fields.append("enable_include_details")
         checkbox_fields.append("skip_lifecycle_check")
         return checkbox_fields
