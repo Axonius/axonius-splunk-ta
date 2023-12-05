@@ -115,13 +115,6 @@ fields = [
         )
     ), 
     field.RestField(
-        'enforce_ssl_validation',
-        required=False,
-        encrypted=False,
-        default=True,
-        validator=None
-    ), 
-    field.RestField(
         'enable_include_details',
         required=False,
         encrypted=False,

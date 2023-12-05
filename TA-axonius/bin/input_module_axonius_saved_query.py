@@ -16,7 +16,7 @@ class Config:
 
 
 class API:
-    def __init__(self, url, api_key, api_secret, verify=False, timeout=900):
+    def __init__(self, url, api_key, api_secret, verify=True, timeout=900):
         self._url = url
         self._api_key = api_key
         self._api_secret = api_secret
@@ -32,12 +32,8 @@ class API:
             headers['api-key'] = self._api_key
             headers['api-secret'] = self._api_secret
 
-            if self._verify:
-                req = requests_method(f"{self._url}{api_endpoint}", timeout=self._timeout, params=params,
-                                      data=json.dumps(data), headers=headers)
-            else:
-                req = requests_method(f"{self._url}{api_endpoint}", timeout=self._timeout, params=params,
-                                      data=json.dumps(data), headers=headers, verify=self._verify)
+            req = requests_method(f"{self._url}{api_endpoint}", timeout=self._timeout, params=params,
+                                  data=json.dumps(data), headers=headers, verify=self._verify)
 
         except Exception as e:
             exception = e
@@ -155,6 +151,8 @@ class EntitySearch:
         self._api = api
         self._api_endpoint = f"/api/{entity_type}"
         self._page_size = page_size
+        if int(self._page_size) > 2000:
+            self._page_size = 2000
         self._include_details = include_details
         self._cursor = None
         self._logger_callback = logger_callback
@@ -363,7 +361,6 @@ def validate_input(helper, definition):
     page_size = definition.parameters.get('page_size', str)
     api_standoff = definition.parameters.get('standoff_ms', str)
     ssl_certificate_path = definition.parameters.get('ssl_certificate_path', "")
-    enforce_ssl_validation = definition.parameters.get('enforce_ssl_validation')
 
     if int(page_size) < 1:
         raise ValueError('"Page Size" must be an integer greater than 0')
@@ -383,16 +380,11 @@ def validate_input(helper, definition):
     try:
         verify = True
 
-        helper.log_info(f"enforce_ssl_validation: {enforce_ssl_validation}")
-
-        if str(enforce_ssl_validation).lower() not in ["1", "true"]:
-            verify = False
-
-        helper.log_info(f"verify: {verify}")
-
         if ssl_certificate_path is not None:
             if len(ssl_certificate_path) > 0:
                 verify = ssl_certificate_path
+
+        helper.log_info(f"verify: {verify}")
 
         api = API(api_host, str(api_key), str(api_secret), verify)
         search = EntitySearch(api, "devices", 1)
@@ -438,7 +430,7 @@ def collect_events(helper, ew):
     opt_standoff_ms = helper.get_arg('standoff_ms')
     opt_field_mapping = helper.get_arg('dynamic_field_mapping')
     opt_ssl_certificate_path = helper.get_arg('ssl_certificate_path')
-    opt_enforce_ssl_validation = helper.get_arg('enforce_ssl_validation')
+    
     opt_enable_include_details = helper.get_arg('enable_include_details')
 
     # extra options to control flow
@@ -467,7 +459,6 @@ def collect_events(helper, ew):
     log_info(f"VARS - Incremental Ingest Time Field: {opt_incremental_ingest_time_field}")
     log_info(f"VARS - API Standoff (MS): {opt_standoff_ms}")
     log_info(f"VARS - Field Mapping: {opt_field_mapping}")
-    log_info(f"VARS - Enforce SSL Validation: {opt_enforce_ssl_validation}")
     log_info(f"VARS - Enable Include Details: {opt_enable_include_details}")
     log_info(f"VARS - CA Bundle Path: {opt_ssl_certificate_path}")
     log_info(f"VARS - Skip Lifecycle Check: {opt_skip_lifecycle_check}")
@@ -476,7 +467,7 @@ def collect_events(helper, ew):
     critical_error = False
 
     # Set verify to True/False
-    verify = opt_enforce_ssl_validation
+    verify = True
 
     # Change the value of verify to the path of the ca_bundle if specified
     if opt_ssl_certificate_path:
