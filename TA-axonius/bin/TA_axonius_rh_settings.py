@@ -29,7 +29,7 @@ fields_additional_parameters = [
     field.RestField(
         'api_key',
         required=False,
-        encrypted=False,
+        encrypted=True,
         default='',
         validator=validator.String(
             min_len=0, 
@@ -39,7 +39,7 @@ fields_additional_parameters = [
     field.RestField(
         'api_secret',
         required=False,
-        encrypted=False,
+        encrypted=True,
         default='',
         validator=validator.String(
             min_len=0, 
