@@ -8,6 +8,7 @@ import time
 
 from urllib.parse import urlparse
 
+CF_ACCESS_TOKEN = None
 
 class Config:
     supported_minimum_version: str = "4.4.0"
@@ -16,7 +17,8 @@ class Config:
 
 
 class API:
-    def __init__(self, url, api_key, api_secret, verify=True, timeout=900):
+    def __init__(self, url, api_key, api_secret, verify=True, timeout=900, helper=None):
+        self._helper = helper
         self._url = url
         self._api_key = api_key
         self._api_secret = api_secret
@@ -31,6 +33,9 @@ class API:
         try:
             headers['api-key'] = self._api_key
             headers['api-secret'] = self._api_secret
+
+            if CF_ACCESS_TOKEN:
+                headers['cf-access-token'] = CF_ACCESS_TOKEN
 
             req = requests_method(f"{self._url}{api_endpoint}", timeout=self._timeout, params=params,
                                   data=json.dumps(data), headers=headers, verify=self._verify)
@@ -53,11 +58,23 @@ class API:
     def get(self, api_endpoint, data=None, params=None, headers={}):
         if 'Content-Type' not in headers:
             headers['Content-Type'] = 'application/json'
+
+        if self._helper:
+            self._helper.log_debug(f"Performing GET request to {api_endpoint}.")
+            self._helper.log_debug(f"Params: {params}")
+            self._helper.log_debug(f"Data: {data}")
+
         return self._rest_base("get", api_endpoint, data=data, params=params, headers=headers)
 
     def post(self, api_endpoint, data=None, params=None, headers={}):
         if 'Content-Type' not in headers:
             headers['Content-Type'] = 'application/vnd.api+json'
+
+        if self._helper:
+            self._helper.log_debug(f"Performing POST request to {api_endpoint}.")
+            self._helper.log_debug(f"Params: {params}")
+            self._helper.log_debug(f"Data: {data}")
+
         return self._rest_base("post", api_endpoint, data=data, params=params, headers=headers)
 
 
@@ -110,10 +127,11 @@ class Lifecycle:
 
 
 class SavedQueries:
-    def __init__(self, api, base_api_endpoint):
+    def __init__(self, api, base_api_endpoint, helper=None):
         self._api = api
         self._api_endpoint = base_api_endpoint
         self._queries = {}
+        self._helper = helper
 
     def get_attributes_by_name(self, query_name):
 
@@ -135,9 +153,18 @@ class SavedQueries:
             if query["attributes"]["uuid"] == uuid:
                 query_filter = query["attributes"]["view"]["query"].get("filter")
                 query_fields = query["attributes"]["view"].get("fields")
-                query_column_filters = query["attributes"]["view"].get("colFilters")
 
-        return uuid, query_filter, query_fields, query_column_filters
+                query_column_filters = query["attributes"]["view"].get("colFilters")
+                query_column_excluded_adapters = query["attributes"]["view"].get("colExcludedAdapters")
+                query_asset_exclude_adapters = query["attributes"]["view"].get("assetExcludeAdapters")
+                query_asset_condition_expressions = query["attributes"]["view"].get("assetConditionExpressions")
+
+        if self._helper:
+            self._helper.log_debug(f"Found Saved Query {query_name}")
+            self._helper.log_debug(
+                f"Saved Query Attributes: uuid: {uuid}, query_filter: {query_filter}, query_fields: {query_fields}, query_column_filters: {query_column_filters}, query_column_excluded_adapters: {query_column_excluded_adapters}, query_asset_exclude_adapters: {query_asset_exclude_adapters}, query_asset_condition_expressions: {query_asset_condition_expressions}")
+
+        return uuid, query_filter, query_fields, query_column_filters, query_column_excluded_adapters, query_asset_exclude_adapters, query_asset_condition_expressions
 
 
 def shorten_field_name(field: str) -> str:
@@ -145,8 +172,7 @@ def shorten_field_name(field: str) -> str:
 
 
 class EntitySearch:
-    def __init__(self, api, entity_type, page_size=1000, include_details=True,
-                 logger_callback=None):
+    def __init__(self, api, entity_type, page_size=1000, include_details=True, helper=None):
 
         self._api = api
         self._api_endpoint = f"/api/{entity_type}"
@@ -155,15 +181,17 @@ class EntitySearch:
             self._page_size = 2000
         self._include_details = include_details
         self._cursor = None
-        self._logger_callback = logger_callback
         self._uuid = None
         self._query_filter = None
         self._query_fields = None
-        self._query_column_filters = None
 
-    def _log(self, msg):
-        if self._logger_callback is not None:
-            self._logger_callback(msg)
+        self._query_column_filters = None
+        self._query_column_excluded_adapters = None
+        self._query_asset_exclude_adapters = None
+        self._query_asset_condition_expressions = None
+
+        self._helper = helper
+
 
     def connection_test(self) -> None:
         data = {
@@ -190,10 +218,16 @@ class EntitySearch:
                             incremental_ingest=False, incremental_ingest_time_field='specific_data.data.fetch_time', 
                             include_auids=False, truncate_fields=[], batch_callback=None):
         try:
-            ax_saved_queries = SavedQueries(self._api, self._api_endpoint)
+            ax_saved_queries = SavedQueries(self._api, self._api_endpoint, helper=self._helper)
 
             if self._uuid is None or self._query_filter is None or self._query_fields is None:
-                self._uuid, self._query_filter, self._query_fields, self._query_column_filters = ax_saved_queries.get_attributes_by_name(name)
+                (self._uuid, 
+                 self._query_filter, 
+                 self._query_fields, 
+                 self._query_column_filters, 
+                 self._query_column_excluded_adapters, 
+                 self._query_asset_exclude_adapters, 
+                 self._query_asset_condition_expressions) = ax_saved_queries.get_attributes_by_name(name)
 
             if incremental_ingest:
                 if incremental_ingest_time_field not in self._query_fields:
@@ -231,12 +265,22 @@ class EntitySearch:
 
                 if self._query_column_filters:
                     data["data"]["attributes"]["field_filters"] = self._query_column_filters
+                if self._query_column_excluded_adapters:
+                    data["data"]["attributes"]["excluded_adapters"] = self._query_column_excluded_adapters
+                if self._query_asset_exclude_adapters:
+                    data["data"]["attributes"]["asset_excluded_adapters"] = self._query_asset_exclude_adapters
+                if self._query_asset_condition_expressions:
+                    data["data"]["attributes"]["asset_filters"] = self._query_asset_condition_expressions
+
 
                 status, response, exception = self._api.post(self._api_endpoint, data=data)
+
+                self._helper.log_debug(f"Response: Status: {status}, Data: {response}")
 
                 if status == 200 and response is not None and exception is None:
                     if "meta" in response:
                         self._cursor = response["meta"]["cursor"]
+                        self._total_assets = response["meta"]["page"]["totalResources"]
 
                         for device in response["data"]:
                             entity_row = {}
@@ -253,6 +297,9 @@ class EntitySearch:
                                 entity_row[field_name] = device['attributes'][field]
 
                             entities.append(entity_row)
+
+                        if self._total_assets == len(entities):
+                            response = {"data": None}
 
                     else:
                         response = {"data": None}
@@ -386,8 +433,8 @@ def validate_input(helper, definition):
 
         helper.log_info(f"verify: {verify}")
 
-        api = API(api_host, str(api_key), str(api_secret), verify)
-        search = EntitySearch(api, "devices", 1)
+        api = API(api_host, str(api_key), str(api_secret), verify, helper=helper)
+        search = EntitySearch(api, "devices", 1, helper=helper)
         search.connection_test()
 
     except Exception as ex:
@@ -487,11 +534,10 @@ def collect_events(helper, ew):
     retry_standoff = Config.retry_standoff if helper.get_arg('name') is not None else [0, 3, 3, 3]
 
     # Create an API object for REST calls
-    api = API(opt_api_host, opt_api_key, opt_api_secret, verify, timeout=timeout)
+    api = API(opt_api_host, opt_api_key, opt_api_secret, verify, timeout=timeout, helper=helper)
 
     # Create EntitySearch object with entity type and page size
-    search = EntitySearch(api, opt_entity_type, opt_page_size, 
-                          opt_enable_include_details, log_info)
+    search = EntitySearch(api, opt_entity_type, opt_page_size, opt_enable_include_details, helper=helper)
 
     log_info(checkpoint_name)
 
@@ -569,8 +615,14 @@ def collect_events(helper, ew):
             if not event_writer:
                 # Get definition of query_fields, used to check if the fetch_time field should be removed
                 api_endpoint = f"/api/{opt_entity_type}"
-                ax_saved_queries = SavedQueries(api, api_endpoint)
-                uuid, query_filter, query_fields, query_column_filters = ax_saved_queries.get_attributes_by_name(opt_saved_query)
+                ax_saved_queries = SavedQueries(api, api_endpoint, helper=helper)
+                (uuid, 
+                 query_filter, 
+                 query_fields, 
+                 query_column_filters, 
+                 query_column_excluded_adapters, 
+                 query_asset_exclude_adapters, 
+                 query_asset_condition_expressions) = ax_saved_queries.get_attributes_by_name(opt_saved_query)
 
                 # Default remove fetch time to true
                 remove_fetch_time_field = True
