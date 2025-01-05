@@ -98,6 +98,16 @@ fields = [
         )
     ), 
     field.RestField(
+        'cron_schedule',
+        required=False,
+        encrypted=False,
+        default=None,
+        validator=validator.String(
+            min_len=0, 
+            max_len=8192, 
+        )
+    ), 
+    field.RestField(
         'incremental_data_ingest',
         required=False,
         encrypted=False,

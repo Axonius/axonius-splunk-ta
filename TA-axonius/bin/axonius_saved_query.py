@@ -51,7 +51,7 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("entity_type", title="Entity Type",
-                                         description="The entity type of the saved query, either devices or users",
+                                         description="The entity type of the saved query",
                                          required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("saved_query", title="Saved Query",
@@ -59,7 +59,7 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("page_size", title="Page Size",
-                                         description="The number of asset entities to fetch during each API call, higher is quicker while lower takes less memory",
+                                         description="The number of asset entities to fetch during each API call, higher is quicker while lower takes less memory.The maximum value is 2,000",
                                          required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("standoff_ms", title="API Standoff (milliseconds)",
@@ -74,12 +74,16 @@ class ModInputaxonius_saved_query(modinput_wrapper.base_modinput.BaseModInput):
                                          description="Rename fields using a JSON-formatted string, renaming occurs prior to data ingest",
                                          required_on_create=False,
                                          required_on_edit=False))
+        scheme.add_argument(smi.Argument("cron_schedule", title="Cron Schedule",
+                                         description="Use this parameter when you want to use a cron schedule to schedule the data ingestion.",
+                                         required_on_create=False,
+                                         required_on_edit=False))
         scheme.add_argument(smi.Argument("incremental_data_ingest", title="Incremental Ingest",
                                          description="Include only the entities that have a fetch timer newer than last collection",
                                          required_on_create=False,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("incremental_ingest_time_field", title="Incremental Ingest Time Field",
-                                         description="Time field to use for comparison for incremental ingest.",
+                                         description="Time field to use for comparison for incremental ingest. For Vulnerabilities use specific_data.data.first_seen",
                                          required_on_create=True,
                                          required_on_edit=False))
         scheme.add_argument(smi.Argument("enable_include_details", title="Enable \"Include Details\"",
