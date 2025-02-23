@@ -6,6 +6,7 @@ import json
 import re
 import requests
 import time
+from tzlocal import get_localzone
 
 from urllib.parse import urlparse
 
@@ -556,7 +557,7 @@ def collect_events(helper, ew):
     if checkpoint is not None:
         log_info(f"VARS - Check point: {checkpoint_name}")
         try:
-            readable_time = datetime.datetime.fromtimestamp(checkpoint).strftime(time_format)
+            readable_time = datetime.datetime.fromtimestamp(checkpoint, datetime.timezone.utc).strftime(time_format)
             log_info(f"VARS - Check point data: {readable_time}")
         except:
             log_info(f"VARS - Check point data: {checkpoint}")
@@ -575,11 +576,16 @@ def collect_events(helper, ew):
     to_run_fetch_by_cron = True
     if opt_cron_schedule and checkpoint:
         try:
-            cron = croniter(opt_cron_schedule, checkpoint)
-            log_info(f"Current time for Cron check: {datetime.datetime.now().strftime(time_format)}")
-            next_schedule_time = cron.get_next(ret_type=float)
-            log_info(f"Next run is at: {datetime.datetime.fromtimestamp(next_schedule_time).strftime(time_format)}")
-            if datetime.datetime.now() < datetime.datetime.fromtimestamp(next_schedule_time):
+            # Implicitly convert to datetime so that Croniter won't convert it without utc aware context
+            base_dt = datetime.datetime.fromtimestamp(checkpoint, datetime.timezone.utc)
+            cron = croniter(opt_cron_schedule, base_dt)
+            now__utc_dt = datetime.datetime.now(datetime.timezone.utc)
+            log_info(f"Current time for Cron check: {now__utc_dt.strftime(time_format)}")
+            next_schedule_time = cron.get_next(ret_type=float, start_time=base_dt)
+            next_run_dt = datetime.datetime.fromtimestamp(next_schedule_time, datetime.timezone.utc)
+            log_info(f"Next run is at: {next_run_dt}")
+            log_info(f'Comparing {now__utc_dt.strftime(time_format)} to {next_run_dt.strftime(time_format)}')
+            if now__utc_dt < next_run_dt:
                 log_info(f"Data Input not running because it is not time yet.")
                 to_run_fetch_by_cron = False
         except Exception as e:
@@ -720,4 +726,6 @@ def collect_events(helper, ew):
         else:
             # Save new checkpoint if entity_count is greater than one
             if entity_count > 0:
-                helper.save_check_point(checkpoint_name, datetime.datetime.now().timestamp())
+                current_utc_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+                log_info(f'Saving checkpoint {current_utc_ts}')
+                helper.save_check_point(checkpoint_name, current_utc_ts)
